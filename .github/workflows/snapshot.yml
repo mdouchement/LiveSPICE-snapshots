@@ -1,0 +1,83 @@
+name: Snapshot
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '0 0 * * *' # @at 0h0m0s every day
+jobs:
+  release:
+    name: Snapshot
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      - name: Checkout LiveSPICE
+        run: git clone --recursive https://github.com/dsharlet/LiveSPICE.git ../LiveSPICE
+      #
+      - name: METADATA
+        id: METADATA
+        shell: pwsh
+        run: |
+          $workdir = Get-Location
+          Write-Host "::set-output name=workdir::$workdir"
+
+          cd ..\LiveSPICE
+          $workdir = Get-Location
+          Write-Host "::set-output name=workdir_livespice::$workdir"
+
+          $commit = git rev-parse HEAD
+          $commit_short = $commit.SubString(0, 7)
+          Write-Host "::set-output name=commit::$commit"
+          Write-Host "::set-output name=commit_short::$commit_short"
+
+          Write-Host "::set-output name=build_id::${{ github.run_id }}-$commit_short"
+      - name: Update Release.txt
+        run: echo "${{ steps.METADATA.outputs.commit }}" > ${{ steps.METADATA.outputs.workdir }}\Release.txt
+      - name: Check LiveSPICE changes
+        id: LiveSPICE
+        shell: pwsh
+        run: |
+          # https://www.meziantou.net/executing-github-actions-jobs-or-steps-only-when-specific-files-change.htm
+          $diff = git diff --name-only
+          $SourceDiff = $diff | Where-Object { $_ -match '.txt$' }
+          $HasDiff = $SourceDiff.Length -gt 0
+          Write-Host "::set-output name=changed::$HasDiff"
+      - uses: stefanzweifel/git-auto-commit-action@v4
+        if: ${{ steps.LiveSPICE.outputs.changed == 'True' }}
+        with:
+          repository: .
+          commit_message: Automated Change ${{ steps.METADATA.outputs.build_id }}
+          tagging_message: ${{ steps.METADATA.outputs.build_id }}
+          commit_options: '--no-verify --signoff'
+          push_options: '--follow-tags'
+      #
+      - uses: actions/setup-dotnet@v2
+        if: ${{ steps.LiveSPICE.outputs.changed == 'True' }}
+        with:
+          # https://dotnet.microsoft.com/en-us/download/dotnet
+          dotnet-version: '6.0.x'
+      - name: Build LiveSPICE
+        if: ${{ steps.LiveSPICE.outputs.changed == 'True' }}
+        shell: pwsh
+        working-directory: ${{ steps.METADATA.outputs.workdir_livespice }}\LiveSPICE
+        run: |
+          dotnet publish --framework net50-windows /p:DebugType=None /p:UseSharedCompilation=false  /p:UseRazorBuildServer=false
+
+          Get-ChildItem ${{ steps.METADATA.outputs.workdir_livespice }}\Circuit\Components\ -Filter *.xml | Copy-Item -Destination bin\Debug\net50-windows\Components\ -Force -PassThru
+          dir bin\Debug\net50-windows\
+          dir bin\Debug\net50-windows\Components\
+
+          cd bin\Debug
+          ren net50-windows LiveSPICE
+          Compress-Archive -Path LiveSPICE -DestinationPath ${{ steps.METADATA.outputs.workdir }}\LiveSPICE-${{ steps.METADATA.outputs.build_id }}.zip
+      - name: Release LiveSPICE
+        if: ${{ steps.LiveSPICE.outputs.changed == 'True' }}
+        uses: softprops/action-gh-release@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          tag_name: ${{ steps.METADATA.outputs.build_id }}
+          name: LiveSPICE-${{ steps.METADATA.outputs.build_id }}
+          body: |
+            Automated Snapshot
+            https://github.com/dsharlet/LiveSPICE/commit/${{ steps.METADATA.outputs.commit }}
+          files: LiveSPICE-${{ steps.METADATA.outputs.build_id }}.zip
