@@ -1,9 +1,10 @@
 name: Snapshot
-on:
-  push:
-    branches: [main]
-  schedule:
-    - cron: '0 0 * * *' # @at 0h0m0s every day
+# on:
+#   push:
+#     branches: [main]
+#   schedule:
+#     - cron: '0 0 * * *' # @at 0h0m0s every day
+on: workflow_dispatch
 jobs:
   release:
     name: Snapshot
