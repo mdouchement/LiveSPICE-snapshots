@@ -7,7 +7,7 @@ Auto-builds [LiveSPICE](https://github.com/dsharlet/LiveSPICE) project.
 - Download the .NET runtime
 
 ```sh
-winget install Microsoft.DotNet.DesktopRuntime.6
+winget install Microsoft.DotNet.DesktopRuntime.5
 ```
 > LiveSPICE currently targets .NET 6 version
 
